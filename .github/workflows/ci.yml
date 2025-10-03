@@ -5,6 +5,11 @@ name: QA Test Automation Portfolio - CI
 'on':
   push:
     branches: ['main']
+    paths-ignore:
+      - 'README.md'
+      - 'LICENSE'
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches: ['main']
   workflow_dispatch:
