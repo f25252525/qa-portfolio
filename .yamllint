@@ -1,0 +1,21 @@
+# .yamllint
+extends: default
+
+rules:
+  # GH Actions files often omit '---'
+  document-start: disable
+
+  # GH Actions uses the key 'on' — quote it in YAML, or relax truthy.
+  truthy:
+    check-keys: false
+
+  # Keep line length warnings (tweak if you want stricter/looser)
+  line-length:
+    max: 140
+    level: warning
+
+  braces:
+    min-spaces-inside: 1
+    max-spaces-inside: 1
+    min-spaces-inside-empty: 1
+    max-spaces-inside-empty: 1

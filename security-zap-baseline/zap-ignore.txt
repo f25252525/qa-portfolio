@@ -1,0 +1,23 @@
+# AlertID [TAB] URL regex (.* to match any)
+# 10020 - Information Disclosure (verbose server banner) tolerated on demo app
+10020	.*
+# 10021 - X-Frame-Options missing; acceptable for public marketing pages
+10021	.*
+# 10035 - Strict-Transport-Security absent; upstream controls HTTPS policy
+10035	.*
+# 10038 - Content Security Policy missing: accepted risk while UI evolves
+10038	.*
+# 10049 - Malformed cookie headers tolerated from third-party demo API
+10049	.*
+# 10050 - Separate cookies for cross-domain labs; false positive for demo
+10050	.*
+# 10063 - Feature Policy missing; documented limitation in demo app
+10063	.*
+# 10094 - SameSite cookie attribute absent; demo login uses legacy cookies
+10094	.*
+# 10098 - X-Content-Type-Options missing due to static asset host
+10098	.*
+# 90003 - Reporting an intentionally exposed form field (false positive)
+90003	.*
+# 90005 - Budgeted timeout false positive for passive scans on slow demo host
+90005	.*

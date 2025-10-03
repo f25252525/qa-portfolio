@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+ <hashTree>
+  <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="API Smoke" enabled="true">
+   <elementProp name="TestPlan.user_defined_variables" elementType="Arguments">
+    <collectionProp name="Arguments.arguments">
+     <elementProp name="BASE_URL" elementType="Argument">
+      <stringProp name="Argument.name">BASE_URL</stringProp>
+      <stringProp name="Argument.value">https://reqres.in/api</stringProp>
+     </elementProp>
+    </collectionProp>
+   </elementProp>
+  </TestPlan>
+  <hashTree>
+   <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="smoke" enabled="true">
+    <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+     <boolProp name="LoopController.continue_forever">false</boolProp>
+     <stringProp name="LoopController.loops">-1</stringProp>
+    </elementProp>
+    <stringProp name="ThreadGroup.num_threads">5</stringProp>
+    <stringProp name="ThreadGroup.ramp_time">5</stringProp>
+    <boolProp name="ThreadGroup.scheduler">true</boolProp>
+    <stringProp name="ThreadGroup.duration">20</stringProp>
+   </ThreadGroup>
+   <hashTree>
+    <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET users" enabled="true">
+     <stringProp name="HTTPSampler.path">${BASE_URL}/users?page=2</stringProp>
+     <stringProp name="HTTPSampler.method">GET</stringProp>
+    </HTTPSamplerProxy>
+    <hashTree>
+     <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Assert 200 or body has data" enabled="true">
+      <stringProp name="scriptLanguage">groovy</stringProp>
+      <stringProp name="parameters"></stringProp>
+      <stringProp name="filename"></stringProp>
+      <stringProp name="script">if (!(prev.getResponseCode() == '200' || prev.getResponseDataAsString().contains('&quot;data&quot;'))) { Failure = true; FailureMessage = 'Expected 200 or body contains "data"'; }</stringProp>
+     </JSR223Assertion>
+    </hashTree>
+    <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary" enabled="true"/>
+    <hashTree/>
+   </hashTree>
+  </hashTree>
+ </hashTree>
+</jmeterTestPlan>

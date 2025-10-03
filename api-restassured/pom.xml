@@ -1,0 +1,74 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <properties>
+    <!-- Keeps compilation consistent on runners (Temurin 21 is fine compiling release 17) -->
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId><artifactId>api-restassured</artifactId><version>1.0</version>
+  <dependencies>
+    <dependency><groupId>io.rest-assured</groupId><artifactId>rest-assured</artifactId><version>5.4.0</version><scope>test</scope></dependency>
+    <!-- JUnit 5 for unit tests against pure logic -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-surefire-plugin</artifactId>
+      <version>3.2.5</version>
+      <configuration>
+        <failIfNoTests>true</failIfNoTests>
+        <testFailureIgnore>false</testFailureIgnore>
+        <useModulePath>false</useModulePath>
+        <includes>
+          <include>**/*Test.java</include>
+          <include>**/*Tests.java</include>
+          <include>**/*IT.java</include>
+          <include>**/*E2E.java</include>
+        </includes>
+      </configuration>
+    </plugin>
+    <plugin>
+      <!-- PIT mutation config: targets REST helpers with JUnit5 plugin and 0% break threshold so CI reports but never blocks. -->
+      <groupId>org.pitest</groupId>
+      <artifactId>pitest-maven</artifactId>
+      <version>1.16.1</version>
+      <dependencies>
+        <dependency>
+          <groupId>org.pitest</groupId>
+          <artifactId>pitest-junit5-plugin</artifactId>
+          <version>1.2.1</version>
+        </dependency>
+      </dependencies>
+      <configuration>
+        <targetClasses>
+          <param>com.example.api.*</param>
+        </targetClasses>
+        <testPlugin>junit5</testPlugin>
+        <outputFormats>
+          <param>XML</param>
+          <param>HTML</param>
+        </outputFormats>
+        <reportsDirectory>${project.build.directory}/pit-reports</reportsDirectory>
+        <!-- mutationThreshold left at 0 to surface scores without failing small suites. -->
+        <mutationThreshold>0</mutationThreshold>
+        <!-- 2 threads keeps the suite lightweight for CI containers. -->
+        <threads>2</threads>
+        <testPlugin>junit5</testPlugin>
+        <failWhenNoMutations>false</failWhenNoMutations>
+      </configuration>
+    </plugin>
+  </plugins></build>
+</project>
+

@@ -1,0 +1,92 @@
+openapi: 3.0.3
+info:
+  title: ReqRes Mock API
+  version: 1.0.0
+  description: Mock API for CI testing to avoid rate limits
+servers:
+  - url: http://localhost:4010/api
+    description: Local mock server
+paths:
+  /users:
+    get:
+      summary: List users
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+                  total:
+                    type: integer
+                  total_pages:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        email:
+                          type: string
+                        first_name:
+                          type: string
+                        last_name:
+                          type: string
+                        avatar:
+                          type: string
+                  support:
+                    type: object
+                    properties:
+                      url:
+                        type: string
+                      text:
+                        type: string
+              example:
+                page: 2
+                per_page: 6
+                total: 12
+                total_pages: 2
+                data:
+                  - id: 7
+                    email: 'michael.lawson@reqres.in'
+                    first_name: 'Michael'
+                    last_name: 'Lawson'
+                    avatar: 'https://reqres.in/img/faces/7-image.jpg'
+                  - id: 8
+                    email: 'lindsay.ferguson@reqres.in'
+                    first_name: 'Lindsay'
+                    last_name: 'Ferguson'
+                    avatar: 'https://reqres.in/img/faces/8-image.jpg'
+                support:
+                  url: 'https://reqres.in/#support-heading'
+                  text: 'To keep ReqRes free, contributions towards server costs are appreciated!'
+  /unknown/{id}:
+    get:
+      summary: Get unknown resource (always returns 404)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}

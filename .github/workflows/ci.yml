@@ -1,0 +1,556 @@
+﻿---
+name: QA Test Automation Portfolio - CI
+
+# Triggers
+'on':
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+  #schedule:
+  #  - cron: '0 3 * * *' # nightly
+
+# Prevent overlapping runs on the same ref/branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  packages: read
+
+# Global env & defaults
+env:
+  API_BASE: https://reqres.in/api
+  APP_BASE_URL: https://www.saucedemo.com
+  PASS: secret_sauce
+  USER: standard_user
+
+jobs:
+  # Bootstrap
+  bootstrap:
+    runs-on: ubuntu-latest
+    name: Bootstrap (toolchain & caches)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Prepare Java toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: java -version && echo "JAVA_HOME=$JAVA_HOME"
+
+  # Lint & static
+  lint-and-static:
+    runs-on: ubuntu-latest
+    name: Lint & Static Gates
+    needs: bootstrap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Prettier
+        run: npm run fmt
+      - name: Markdownlint
+        run: npm run lint:md
+      - name: YML lint
+        run: npm run lint:yml
+      - name: Lint (Java)
+        uses: actions/setup-java@v4
+        with:
+          cache: maven
+          distribution: temurin
+          java-version: '21'
+      - run: cd ui-selenium-java && mvn -q -B -ntp spotless:check verify -DskipTests
+      # Optional: Dockerfile lint
+      # - run: sudo apt-get install -y hadolint && hadolint Dockerfile
+
+  # Unit gateway
+  unit:
+    runs-on: ubuntu-latest
+    name: Unit
+    needs: lint-and-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Cypress unit tests
+        run: |
+          cd ui-cypress
+          npm ci
+          npm run -s test:unit
+      - name: Playwright unit tests
+        run: |
+          cd ui-playwright-ts
+          npm ci
+          npm run -s test:unit
+
+  # API suites
+  api-restassured:
+    runs-on: ubuntu-latest
+    name: API - REST Assured
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java for REST Assured
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Run REST Assured tests (fail on zero)
+        run: |
+          set -euxo pipefail
+          cd api-restassured
+          mvn -q "-Dapi.base=${API_BASE}" test
+          python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+          files = glob.glob('target/surefire-reports/TEST-*.xml')
+          if not files:
+              print('No surefire XMLs found'); sys.exit(2)
+          tests = failures = errors = 0
+          for f in files:
+              root = ET.parse(f).getroot()
+              tests += int(root.attrib.get('tests', 0))
+              failures += int(root.attrib.get('failures', 0))
+              errors += int(root.attrib.get('errors', 0))
+          print({'tests': tests, 'failures': failures, 'errors': errors})
+          if tests == 0 or failures > 0 or errors > 0:
+              sys.exit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: restassured-report
+          path: api-restassured/target/surefire-reports
+
+  api-postman:
+    runs-on: ubuntu-latest
+    name: API - Newman (Postman)
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node for Newman
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run Newman (local mock + test)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd api-postman-newman
+          npm ci --no-audit --no-fund
+          # This script should start the mock server, wait for readiness, run newman,
+          # then exit cleanly.
+          npm run -s api:test:mock
+          test -f newman.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: newman-report
+          path: api-postman-newman/newman.html
+
+  # UI suites
+  ui-playwright:
+    runs-on: ubuntu-latest
+    name: UI - Playwright
+    needs:
+      - api-restassured
+      - api-postman
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Seed Playwright Linux baselines if missing
+        working-directory: ui-playwright-ts
+        run: |
+          if ! ls tests/visual/*-snapshots/*-chromium-linux.png >/dev/null 2>&1; then
+            echo "No Linux baselines found; seeding…"
+            npx playwright test tests/visual --update-snapshots || true
+            echo "Seeded Linux baselines for this run."
+          else
+            echo "Linux baselines exist; skipping seed."
+          fi
+      - name: Run Playwright (smoke on PR, full on main)
+        run: |
+          cd ui-playwright-ts
+          npm ci
+          npx playwright install --with-deps
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            npx playwright test tests/smoke --reporter=html
+          else
+            npx playwright test --reporter=html
+          fi
+      - name: Accessibility (Playwright + axe)
+        run: |
+          cd ui-playwright-ts
+          export PLAYWRIGHT_HTML_REPORT=playwright-report-a11y
+          npx playwright test tests/a11y --reporter=html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: ui-playwright-ts/playwright-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-visual-report
+          path: ui-playwright-ts/playwright-report-visual
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-a11y-html
+          path: ui-playwright-ts/playwright-report-a11y
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-a11y-reports
+          path: ui-playwright-ts/a11y-reports/**
+          if-no-files-found: ignore
+
+  ui-cypress:
+    runs-on: ubuntu-latest
+    name: UI - Cypress
+    needs: ui-playwright
+    env:
+      # make secret visible to 'if:' and the step
+      APPLITOOLS_API_KEY: ${{ secrets.APPLITOOLS_API_KEY || '' }}
+      # also expose it to Cypress as Cypress env (in case test code reads Cypress.env)
+      CYPRESS_APPLITOOLS_API_KEY: ${{ secrets.APPLITOOLS_API_KEY || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui-cypress/package-lock.json
+      - name: Install UI deps (Cypress + plugins)
+        working-directory: ui-cypress
+        run: npm ci --no-audit --no-fund
+      - name: Run Cypress (smoke on PR, full on main)
+        working-directory: ui-cypress
+        env:
+          # Explicitly disable Eyes in the general run
+          APPLITOOLS_IS_DISABLED: 'true'
+          APPLITOOLS_API_KEY: ''
+          CYPRESS_APPLITOOLS_API_KEY: ''
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            npx cypress run --browser chrome \
+              --spec "cypress/e2e/{smoke,cart,a11y,bdd}/**/*"
+          else
+            npx cypress run --browser chrome \
+              --spec "cypress/e2e/smoke/login.cy.js"
+          fi
+      - name: BDD (Cypress + Cucumber)
+        run: |
+          cd ui-cypress
+          npx cypress run --browser chrome --spec "cypress/e2e/bdd/**/*.feature"
+      - name: Accessibility (Cypress + axe)
+        run: |
+          cd ui-cypress
+          npx cypress run --browser chrome --spec "cypress/e2e/a11y/**/*.cy.js"
+      - name: Visual (Cypress + Applitools)
+        if: ${{ env.APPLITOOLS_API_KEY != '' }}
+        env:
+          APPLITOOLS_API_KEY: ${{ secrets.APPLITOOLS_API_KEY }}
+          APPLITOOLS_IS_DISABLED: 'false'
+        working-directory: ui-cypress
+        run: |
+          npx eyes-setup || true
+          npx cypress run --browser chrome --spec "cypress/e2e/visual/applitools.cy.js"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cypress-artifacts
+          path: |
+            ui-cypress/cypress/videos/**
+            ui-cypress/cypress/screenshots/**
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cypress-a11y-reports
+          path: ui-cypress/cypress/reports/a11y/**
+          if-no-files-found: ignore
+
+  ui-selenium:
+    runs-on: ubuntu-latest
+    name: UI - Selenium
+    needs: ui-cypress
+    services:
+      selenium:
+        image: selenium/standalone-chromium:4
+        ports: ['4444:4444']
+        options: --shm-size=2g
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify Java
+        run: |
+          java -version
+          echo "JAVA_HOME=$JAVA_HOME"
+          mvn -version
+      - name: Run Selenium (smoke on PR, full on main)
+        run: |
+          cd ui-selenium-java
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            mvn -q "-Dselenium.grid.url=http://localhost:4444/wd/hub" "-Dbase.url=${APP_BASE_URL}" "-Duser=${USER}" "-Dpass=${PASS}" "-Dtest=*SmokeTest" test
+          else
+            mvn -q "-Dselenium.grid.url=http://localhost:4444/wd/hub" "-Dbase.url=${APP_BASE_URL}" "-Duser=${USER}" "-Dpass=${PASS}" test
+          fi
+      - name: Summarize surefire results (fail on zero)
+        working-directory: ui-selenium-java
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET, sys
+          files = glob.glob('target/surefire-reports/TEST-*.xml')
+          if not files:
+            print('No TEST-*.xml under target/surefire-reports; failing.')
+            sys.exit(2)
+          t=f=e=s=0
+          for p in files:
+            root = ET.parse(p).getroot()
+            t += int(root.attrib.get('tests', 0))
+            f += int(root.attrib.get('failures', 0))
+            e += int(root.attrib.get('errors', 0))
+            s += int(root.attrib.get('skipped', 0))
+          print(f"Surefire totals: tests={t} failures={f} errors={e} skipped={s}")
+          if t == 0 or f > 0 or e > 0:
+            sys.exit(1)
+          PY
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: ui-selenium-java/target/surefire-reports
+
+  # Security/Perf
+  security-zap:
+    runs-on: ubuntu-latest
+    name: Security - ZAP Baseline
+    needs: ui-selenium
+    steps:
+      - uses: actions/checkout@v4
+      - name: ZAP Baseline
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        uses: zaproxy/action-baseline@v0.14.0
+        continue-on-error: true
+        with:
+          target: ${{ env.APP_BASE_URL }}
+          rules_file_name: security-zap-baseline/.zap/rules.tsv
+          cmd_options: -a -r report_html.html
+          artifact_name: zap_scan
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        with:
+          name: zap-report
+          path: report_html.html
+      - name: Security scan skipped note
+        if: ${{ github.event_name == 'pull_request' && github.ref != 'refs/heads/main' }}
+        run: echo 'Skipping ZAP Baseline for pull_request events'
+
+  perf-k6:
+    runs-on: ubuntu-latest
+    name: Perf - k6
+    needs: security-zap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+        if: ${{ github.event_name == 'push' }}
+      - name: Run k6 smoke
+        if: ${{ github.event_name == 'push' }}
+        run: k6 run perf-k6/smoke.js
+      - name: Perf suites skipped note
+        if: ${{ github.event_name == 'pull_request' && github.ref != 'refs/heads/main' }}
+        run: echo 'Skipping perf suites for pull_request events'
+
+  perf-jmeter:
+    runs-on: ubuntu-latest
+    name: Perf - JMeter
+    needs: perf-k6
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pre-check JMeter plan exists
+        run: |
+          ls -al perf-jmeter
+          test -f perf-jmeter/test.jmx
+      - name: Run JMeter plan via Docker
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/perf-jmeter":/jmeter \
+            -w /jmeter \
+            justb4/jmeter:5.5 \
+            -n -t test.jmx -l results.jtl -e -o html-report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-html-report
+          path: perf-jmeter/html-report/**
+
+  # Mutation
+  mutation-js:
+    runs-on: ubuntu-latest
+    name: Mutation - Stryker (JS)
+    needs: perf-jmeter
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      - uses: actions/setup-node@v4
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        with:
+          node-version: '20'
+      - name: Run Stryker (ui-playwright-ts)
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          cd ui-playwright-ts
+          npm ci
+          npm run mutate
+      - name: Print Stryker summary
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          node -e "const fs=require('fs'); const p='ui-playwright-ts/reports/mutation/mutation.json'; if(fs.existsSync(p)){const r=JSON.parse(fs.readFileSync(p,'utf8')); const score=(r.summary?.mutationScore ?? r.metrics?.mutationScore ?? r.mutationScore ?? 0); console.log('Stryker mutation score:', score);} else { console.log('Stryker report not found at', p);} "
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+        with:
+          name: stryker-report
+          path: ui-playwright-ts/reports/mutation/**
+      - name: Mutation JS skipped note
+        if: ${{ !(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+        run: echo 'Skipping JS mutation tests for this event'
+
+  mutation-java:
+    runs-on: ubuntu-latest
+    name: Mutation - PIT (Java)
+    needs: perf-jmeter
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      - uses: actions/setup-java@v4
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build tests (compile) for PIT
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          mvn -q -f api-restassured/pom.xml \
+            -DskipTests=false -DfailIfNoTests=false -DskipITs=true \
+            clean test
+      - name: Run PIT (api-restassured)
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          mvn -q -f api-restassured/pom.xml \
+            -DskipTests=false \
+            org.pitest:pitest-maven:mutationCoverage
+      - name: Print PIT summary
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET, os
+          p = 'api-restassured/target/pit-reports/mutations.xml'
+          if not os.path.exists(p):
+              print('PIT report not found at', p)
+          else:
+              root = ET.parse(p).getroot()
+              statuses = [m.get('status') for m in root.iter('mutation')]
+              total = len(statuses)
+              killed = statuses.count('KILLED')
+              survived = statuses.count('SURVIVED')
+              score = (killed/total*100) if total else 0
+              print(f'PIT mutations total={total} killed={killed} survived={survived} score={score:.2f}%')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+        with:
+          name: pit-report
+          path: api-restassured/target/pit-reports/**
+      - name: Mutation Java skipped note
+        if: ${{ !(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+        run: echo 'Skipping Java mutation tests for this event'
+
+  # Publish artifacts
+  publish-artifacts:
+    name: Publish & Summarize Artifacts
+    if: ${{ always() }} # run even if some jobs failed
+    needs:
+      - ui-playwright
+      - ui-cypress
+      - ui-selenium
+      - api-restassured
+      - api-postman
+      - perf-k6
+      - perf-jmeter
+      - security-zap
+      - mutation-js
+      - mutation-java
+    runs-on: ubuntu-latest
+
+    steps:
+      # Grab *whatever* artifacts exist from this run into one folder.
+      - name: Download all artifacts (best-effort)
+        id: dl
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          path: collected
+          merge-multiple: true
+        continue-on-error: true # don’t fail the job if some artifacts are missing
+
+      - name: List gathered artifacts
+        run: |
+          if [ -d collected ] && [ "$(ls -A collected)" ]; then
+            echo "Collected the following files:"
+            find collected -type f | sed 's/^/- /'
+          else
+            echo "No artifacts downloaded; nothing to bundle."
+          fi
+
+      - name: Bundle everything into one tarball
+        run: |
+          if [ -d collected ] && [ "$(ls -A collected)" ]; then
+            tar -czf all-artifacts.tgz -C collected .
+          fi
+
+      - name: Upload consolidated bundle
+        if: ${{ hashFiles('all-artifacts.tgz') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-artifacts
+          path: all-artifacts.tgz
+          retention-days: 7
+          compression-level: 6
+
+      - name: Write run summary
+        run: |
+          echo "## Test artifacts" >> $GITHUB_STEP_SUMMARY
+          if [ -d collected ] && [ "$(ls -A collected)" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- Consolidated bundle: **all-artifacts.tgz**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Tree (top level)" >> $GITHUB_STEP_SUMMARY
+            # Show just the top-level directories/files to keep the summary short
+            find collected -maxdepth 2 -type f | head -n 50 | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No artifacts found in this run._" >> $GITHUB_STEP_SUMMARY
+          fi

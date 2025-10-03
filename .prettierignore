@@ -1,0 +1,28 @@
+# node / build
+node_modules/
+dist/
+build/
+
+# reports & generated outputs
+coverage/
+**/coverage-unit/
+artifacts/
+
+# third-party/minified/generated
+**/*.min.js
+**/*.mp4
+
+# Java project (not handled by Prettier here)
+ui-selenium-java/
+
+# Playwright/Cypress outputs
+ui-playwright-ts/reports/
+ui-playwright-ts/coverage-unit/
+ui-cypress/cypress/videos/
+ui-cypress/cypress/screenshots/
+
+# Gherkin features (unless you add a plugin)
+ui-cypress/**/*.feature
+
+# lockfiles
+**/package-lock.json

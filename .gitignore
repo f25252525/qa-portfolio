@@ -1,0 +1,149 @@
+################################################################################
+# Dependencies
+################################################################################
+node_modules/
+**/node_modules/
+
+################################################################################
+# Build artifacts
+################################################################################
+target/                           # Maven/Java
+api-restassured/target/
+api-restassured/target/pit-reports/
+out/
+build/
+dist/
+.gradle/
+.mvn/
+
+################################################################################
+# Test reports & artifacts (UI/API/perf/security)
+################################################################################
+# Cypress (project uses ui-cypress/)
+ui-cypress/cypress/videos/
+ui-cypress/cypress/screenshots/
+ui-cypress/cypress/downloads/
+ui-cypress/cypress/reports/
+# fallback if someone runs from a different CWD
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
+cypress/reports/
+
+# Playwright (project uses ui-playwright-ts/)
+ui-playwright-ts/playwright-report/
+ui-playwright-ts/playwright-report-a11y/
+ui-playwright-ts/test-results/
+ui-playwright-ts/**/trace/
+# generic fallbacks
+playwright-report/
+test-results/
+**/trace/
+
+# Selenium / TestNG reports
+**/surefire-reports/
+**/failsafe-reports/
+
+# Postman/Newman
+api-postman-newman/newman.html     # explicit path used in CI
+newman.html
+newman/*.html
+newman/*.xml
+newman/*.json
+
+# k6 perf
+perf-k6/*.json
+perf-k6/*.csv
+
+# JMeter
+*.jtl
+perf-jmeter/*.jtl
+perf-jmeter/html-report/
+html-report/
+perf_jmeter_logs.zip
+
+# ZAP baseline
+zap.html
+security-zap-baseline/zap.html
+security-zap-baseline/zap_report/
+
+# Mutation testing
+reports/mutation/
+ui-playwright-ts/reports/
+api-restassured/target/pit-reports/
+
+# Coverage (JS/TS)
+coverage/
+.nyc_output/
+
+################################################################################
+# Run outputs bundled/uploaded by CI
+################################################################################
+artifacts/
+collected/
+all-artifacts.tgz
+report_html.html
+
+################################################################################
+# IDE & OS cruft
+################################################################################
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/tasks.json              # keep shared tasks if you want
+!.vscode/extensions.json         # keep shared recommendations if you want
+.history/
+*.log
+*.tmp
+*.temp
+
+################################################################################
+# Env / secrets (never commit)
+################################################################################
+.env
+.env.*
+!.env.example
+
+################################################################################
+# Mock server / local-only pid/logs
+################################################################################
+.mock-pid
+mock-server.log
+
+################################################################################
+# Java class files
+################################################################################
+*.class
+
+################################################################################
+# Local temp/debug logs (never commit)
+################################################################################
+tmp_*.log
+tmp_*.txt
+*_job.log
+ui_*_run.log
+.logs/
+
+################################################################################
+# Accessibility reports (project-specific)
+################################################################################
+ui-cypress/cypress/reports/a11y/
+ui-playwright-ts/a11y-reports/
+
+################################################################################
+# Applitools / plugin handoffs (avoid committing local batch overrides)
+################################################################################
+.applitools/
+.applitools/**/*
+
+################################################################################
+# Editor/patch leftovers
+################################################################################
+*~
+*.swp
+*.swo
+.#*
+*.orig
+*.rej

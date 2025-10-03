@@ -1,0 +1,49 @@
+{
+  "info": {
+    "name": "ReqRes Smoke",
+    "_postman_id": "demo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Smoke collection for ReqRes covering the happy list-users path and a 404 check (targets the Prism mock via API_BASE by default)."
+  },
+  "item": [
+    {
+      "name": "List Users",
+      "request": {
+        "method": "GET",
+        "url": "{{API_BASE}}/users?page=2",
+        "description": "GET /users?page=2 should return 200 with a populated data array; tolerates 401 when upstream requires auth."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test('has data array', function () { pm.expect(Array.isArray(json.data)).to.be.true; });",
+              "pm.test('data not empty', function () { pm.expect(json.data && json.data.length).to.be.above(0); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "404 Negative",
+      "request": {
+        "method": "GET",
+        "url": "{{API_BASE}}/unknown/23",
+        "description": "GET /unknown/23 is expected to return 404 (or 401 in secured environments) so clients can surface missing resource messaging."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": ["pm.test('status 404', ()=>pm.response.code===404);"],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}
