@@ -6,7 +6,7 @@
 
 ## About
 
-A recruiter-friendly, batteries-included QA portfolio that demonstrates breadth (UI, API, perf, security) **and** engineering rigor (linting, mutation testing, artifacts, CI/CD). It runs the same way on GitHub Actions and Jenkins with clear stage parity, smoke/full gating, visual + a11y checks, and a local mock to avoid flaky external APIs.
+My name is **Fraser**, and this is my recruiter-friendly, batteries-included QA portfolio that demonstrates breadth (UI, API, perf, security) **and** engineering rigor (linting, mutation testing, artifacts, CI/CD). It runs the same way on GitHub Actions and Jenkins with clear stage parity, smoke/full gating, visual + a11y checks, and a local mock to avoid flaky external APIs.
 
 > **If you’re skimming:** open `ci.yml` for the pipeline story, `Jenkinsfile` for parity, and the `ui-*` / `api-*` folders for representative tests. The “Stage parity” table below maps everything.
 
